@@ -45,14 +45,28 @@ class RRT:
         """
         num_verts = 1
         
-        vertices = np.zeros((trials + 1, len(origin)))
-        vertices[0, :] = origin
+        vertices = np.zeros((trials + 1, len(self.origin)))
+        vertices[0, :] = self.origin
         
         parents = np.zeros(trials + 1, dtype=int)
         parents[0] = -1
         
         for trial in range(trials):
-            pass
+            # sample a random configuration
+            q_rand = self.random_conf()
+            # find the nearest vertex to the random configuration
+            q_near_index = self.nearest_vertex(q_rand, vertices[:num_verts, :])
+            q_near = vertices[q_near_index, :]
+            # extend the tree towards the random configuration
+            q_new = self.extend(q_near, q_rand, step_size)
+            # check if the new vertex and edge are in the free space
+            if self.conf_free(q_new) and self.edge_free((q_near, q_new)):
+                # add the new vertex and edge to the tree
+                vertices[num_verts, :] = q_new
+                parents[num_verts] = q_near_index
+                num_verts += 1
+            else: 
+                continue
     
         return vertices[:num_verts, :], parents[:num_verts]
 
@@ -67,8 +81,16 @@ class RRT:
         
         @return: The list of vertex indicies such that specifies a path through the graph to `index`.
         """
+        path_through_tree = []
+
+        while parents[index] != -1:
+            path_through_tree.append(parents[index])
+            index = parents[index]
         
-        pass
+        # inverse the list to get the path from the origin to the goal
+        path_through_tree.reverse()
+
+        return path_through_tree
 
     def nearest_vertex(self, conf: np.ndarray, vertices: np.ndarray) -> int:
         """
@@ -82,9 +104,10 @@ class RRT:
                         a vertex.
         @return: The index (i.e. row of `vertices`) of the vertex that is closest to `conf`.
         """
-        pass
+        distances = np.linalg.norm(vertices - conf, axis=1)
+        return np.argmin(distances)
 
-    def extend(self, target: np.ndarray, step_size: float=0.2) -> np.ndarray:
+    def extend(self, origin: np.ndarray, target: np.ndarray, step_size: float=0.2) -> np.ndarray:
         """
         Extends the RRT at most a fixed distance toward the target configuration.
         
@@ -101,7 +124,16 @@ class RRT:
                 `step_size` away from `origin`.
 
         """
-        pass
+        l2_distance = np.linalg.norm(target - origin)
+
+        if l2_distance <= step_size:
+            return target
+        else:
+            direction = target - origin
+            unit_direction = direction / np.linalg.norm(direction)
+            new_conf = origin + unit_direction * step_size
+
+            return new_conf
 
     def random_conf(self) -> np.ndarray:
         """
@@ -112,7 +144,10 @@ class RRT:
         
         @return: A random configuration uniformily distributed across the configuration space.
         """
-        pass
+        sampled_width = np.random.uniform(0, self.width)
+        sampled_height = np.random.uniform(0, self.height)
+
+        return np.array([sampled_width, sampled_height])
 
     def conf_free(self, q: np.ndarray) -> bool:
         """
@@ -152,6 +187,10 @@ class RRT:
         """
         x1, y1 = edge[0]
         x2, y2 = edge[1]
+
+        edge_direction = np.array([x2-x1, y2-y1])
+        edge_unit_direction = edge_direction / np.linalg.norm(edge_direction)
+
         
         # check if edge intersects with rectangular obstacles
         if self.rectangular_obstacles is not None:
@@ -175,7 +214,17 @@ class RRT:
         
         # check if edge intersects with circular obstacles
         if self.circular_obstacles is not None:
-            _distance_line_origin = np.abs((y1-self.origin[1]) * (x2-x1) - (x1-self.origin[0]) *(y2-y1)) / np.sqrt((y2-y1)**2 + (x2-x1)**2)
-            pass
+            #_distance_line_origin = np.abs((y1-self.origin[1]) * (x2-x1) - (x1-self.origin[0]) *(y2-y1)) / np.sqrt((y2-y1)**2 + (x2-x1)**2)
+            for obstacle in self.circular_obstacles:
+                center, radius = obstacle
 
-        pass
+                oriented_segment = np.array([x1-center[0], y1-center[1]])
+                t = np.dot(oriented_segment, edge_unit_direction)
+
+                Pe = np.array([x1,x2]) + edge_unit_direction*t 
+                d = np.linalg.norm(Pe - center)
+
+                if d <= radius:
+                    return False
+
+        return True
